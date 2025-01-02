@@ -6,6 +6,7 @@ const pool = require('./db');
 
 const app = express();
 const port = 3000;
+
 const createTables = async () => {
   try {
       const hesapkoduTableQuery = `
@@ -104,6 +105,7 @@ const fetchDataAndSync = async () => {
     console.error('Error fetching data:', error.message);
   }
 };
+
 app.get('/api/data', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM hesapkodu');
@@ -113,6 +115,7 @@ app.get('/api/data', async (req, res) => {
     res.status(500).send('Internal Server Error');
   }
 });
+
 setInterval(fetchDataAndSync, 5000);
 
 app.listen(port, () => {
