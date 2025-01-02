@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const https = require('https');
 const cors = require('cors'); 
-const pool = require('./db');
+const supabase = require('./db');
 
 const app = express();
 const port = 3000;
@@ -17,7 +17,7 @@ const createTables = async () => {
               borc DECIMAL
           );
       `;
-      await pool.query(hesapkoduTableQuery);
+      await supabase.rpc('execute_sql', { sql: hesapkoduTableQuery });
   } catch (err) {
       console.error('Tablo oluşturulurken hata oluştu:', err.message);
   }
@@ -81,24 +81,32 @@ const fetchDataAndSync = async () => {
     for (const item of scriptResult) {
       const { id: apiId, hesap_kodu, hesap_adi, borc } = item;
 
-      const checkQuery = 'SELECT id FROM hesapkodu WHERE id = $1';
-      const checkResult = await pool.query(checkQuery, [apiId]);
+      const { data: checkResult, error: checkError } = await supabase
+        .from('hesapkodu')
+        .select('id')
+        .eq('id', apiId);
 
-      if (checkResult.rows.length > 0) {
+      if (checkError) {
+        throw new Error(checkError.message);
+      }
 
-        const updateQuery = `
-          UPDATE hesapkodu
-          SET kod = $1, description = $2, borc = $3
-          WHERE id = $4
-        `;
-        await pool.query(updateQuery, [hesap_kodu, hesap_adi, borc || 0, apiId]);
+      if (checkResult.length > 0) {
+        const { error: updateError } = await supabase
+          .from('hesapkodu')
+          .update({ kod: hesap_kodu, description: hesap_adi, borc: borc || 0 })
+          .eq('id', apiId);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
       } else {
-        const insertQuery = `
-          INSERT INTO hesapkodu (id, kod, description, borc)
-          VALUES ($1, $2, $3, $4)
-          RETURNING id;
-        `;
-        await pool.query(insertQuery, [apiId, hesap_kodu || null, hesap_adi || null, borc || 0]);
+        const { error: insertError } = await supabase
+          .from('hesapkodu')
+          .insert([{ id: apiId, kod: hesap_kodu || null, description: hesap_adi || null, borc: borc || 0 }]);
+
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
       }
     }
   } catch (error) {
@@ -108,8 +116,15 @@ const fetchDataAndSync = async () => {
 
 app.get('/api/data', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM hesapkodu');
-    res.json(result.rows);
+    const { data, error } = await supabase
+      .from('hesapkodu')
+      .select('*');
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    res.json(data);
   } catch (error) {
     console.error('Error fetching data:', error.message);
     res.status(500).send('Internal Server Error');
